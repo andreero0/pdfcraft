@@ -2002,19 +2002,12 @@ impl EditCtx {
         }
     }
 
-    /// 32 bytes of entropy for new encryption keys and salts. `RandomState` is seeded by the
-    /// operating system, so no extra dependency is needed.
-    fn entropy(&mut self) -> [u8; 32] {
-        use std::hash::{BuildHasher, Hasher};
+    /// 32 bytes of entropy for new encryption keys and salts, from the operating system (Web
+    /// Crypto in the browser). There is no weaker fallback: without randomness the edit fails.
+    fn entropy() -> Result<[u8; 32], EditError> {
         let mut out = [0u8; 32];
-        for (i, chunk) in out.chunks_mut(8).enumerate() {
-            let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-            h.write_u64(self.seed ^ i as u64);
-            h.write_u64(self.count);
-            self.count += 1;
-            chunk.copy_from_slice(&h.finish().to_le_bytes());
-        }
-        out
+        getrandom::fill(&mut out).map_err(|e| EditError::Protection(format!("no randomness for the encryption key: {e}")))?;
+        Ok(out)
     }
 
     /// A fresh `/NM`: a random-looking UUID (version 4 layout) from a splitmix64 stream.
@@ -2376,10 +2369,10 @@ fn run_edit(doc: &mut pdfcraft_cos::Document, edit: &Edit, cx: &mut EditCtx) -> 
         }
         Edit::Protect(p) => {
             p.validate()?;
-            let seed = cx.entropy();
+            let seed = EditCtx::entropy()?;
             // Without a permissions password nothing is restricted, so the owner password is a
             // random one nobody needs.
-            let random_owner: String = cx.entropy().iter().map(|b| format!("{b:02x}")).collect();
+            let random_owner: String = EditCtx::entropy()?.iter().map(|b| format!("{b:02x}")).collect();
             let params = pdfcraft_cos::NewEncryption {
                 algorithm: p.algorithm,
                 user_password: p.open_password.as_deref().unwrap_or(""),

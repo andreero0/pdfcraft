@@ -41,7 +41,13 @@ png = "0.18"
 url = "2.5"
 idna = "1.1"
 icu_properties = "2.3"
+# Keys and salts for password protection; already in the graph through pdfcraft-sign.
+getrandom = "0.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Already in the graph through lopdf; used only for the local UTC offset ("today").
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# In the browser the randomness comes from Web Crypto.
+getrandom = { version = "0.4", features = ["wasm_js"] }

@@ -1265,6 +1265,22 @@ fn protection_is_validated_undoable_and_never_logged() {
     assert_eq!(page_texts(&s, id), ["Page 1"]);
 }
 
+#[test]
+fn protection_keys_come_from_the_os_and_differ_every_time() {
+    // The keys used to be hashed from counters and the clock, which the web build can't seed:
+    // two protections of the same document must not share a key or a random owner password.
+    let a = crate::EditCtx::entropy().unwrap();
+    let b = crate::EditCtx::entropy().unwrap();
+    assert_ne!(a, b);
+    assert_ne!(a, [0; 32]);
+    let encrypt = || {
+        let (mut s, id) = session_with(1);
+        s.apply(id, Edit::Protect(protection(Some("pw"), None))).unwrap();
+        s.save_bytes(id).unwrap()
+    };
+    assert_ne!(encrypt(), encrypt(), "same document, same password, different keys");
+}
+
 /// Protect a fresh document with `p` as the app does: the edit's result and, when it is
 /// accepted, how the saved file authenticates with no password, the open password and the
 /// permissions password (`None`: it doesn't open).

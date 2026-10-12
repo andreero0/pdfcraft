@@ -3718,6 +3718,7 @@ name = "pdfcraft-engine"
 version = "0.7.1"
 dependencies = [
  "chrono",
+ "getrandom 0.4.3",
  "icu_properties",
  "idna",
  "image",
