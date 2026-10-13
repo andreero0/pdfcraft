@@ -388,6 +388,10 @@ pub type HostSaveFn = Box<dyn Fn(&str, &[u8], bool) -> Result<(), String>>;
 /// Told every frame whether any tab has unsaved work, so a host page can warn before leaving.
 pub type HostDirtyFn = Box<dyn FnMut(bool)>;
 
+/// Quits the app the platform's own way instead of closing the window; returns whether it did
+/// (set by the desktop app on macOS, see [`PdfCraftApp::platform_quit`]).
+pub type PlatformQuitFn = Box<dyn FnMut() -> bool>;
+
 pub struct PasswordPrompt {
     pub name: String,
     pub path: Option<String>,
@@ -548,6 +552,10 @@ pub struct PdfCraftApp {
     pub host_save: Option<HostSaveFn>,
     /// Reports unsaved work to the embedding page (web, see [`HostDirtyFn`]).
     pub host_dirty: Option<HostDirtyFn>,
+    /// macOS: leaving by closing the window crashed in AppKit's Touch Bar finder once eframe had
+    /// dropped the window (storytold/pdfcraft#1136), so a settled quit goes through
+    /// `-[NSApplication terminate:]` instead (see `take_over_close`).
+    pub platform_quit: Option<PlatformQuitFn>,
     /// A pending "save changes?" question (closing a dirty tab or quitting).
     pub close_request: Option<CloseRequest>,
     /// Save to this path instead of asking (tests and automation).
@@ -858,6 +866,7 @@ impl PdfCraftApp {
             os_events: None,
             host_save: None,
             host_dirty: None,
+            platform_quit: None,
             close_request: None,
             save_override: None,
             props_draft: None,
@@ -2488,6 +2497,7 @@ impl eframe::App for PdfCraftApp {
             self.control = Some(control);
         }
         self.guard_quit(ctx);
+        self.take_over_close(ctx);
         let now = ctx.input(|i| i.time);
         self.autosave_tick(now);
         // Reload documents whose files a build rewrote (#431).

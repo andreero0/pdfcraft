@@ -3563,10 +3563,13 @@ dependencies = [
 name = "pdfcraft"
 version = "0.7.1"
 dependencies = [
+ "dispatch2",
  "eframe",
  "egui",
  "fmv-macos-events",
  "log",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
  "pdfcraft-ui-egui",
  "pollster 1.0.1",
  "rustls-native-certs",

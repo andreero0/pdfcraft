@@ -33,6 +33,8 @@ use pdfcraft_ui_egui::PdfCraftApp;
 mod apple_events;
 mod compositor_gpu;
 mod logging;
+#[cfg(target_os = "macos")]
+mod macos_quit;
 #[cfg(target_os = "windows")]
 mod motion;
 mod reopen;
@@ -326,6 +328,7 @@ fn app_creator<'a>(
         #[cfg(target_os = "macos")]
         {
             app.os_events = Some(apple_events.connect(&cc.egui_ctx));
+            app.platform_quit = Some(Box::new(macos_quit::terminate_later));
         }
         if let Some(server) = instance {
             app.os_events = Some(server.connect(&cc.egui_ctx));

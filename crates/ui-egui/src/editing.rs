@@ -847,6 +847,25 @@ impl PdfCraftApp {
             self.shutdown_recovery();
         }
     }
+
+    /// After [`Self::guard_quit`]: a close it let through quits through [`Self::platform_quit`]
+    /// when there is one, and the window stays for that quit to close. Returns whether it took
+    /// the close over.
+    pub(crate) fn take_over_close(&mut self, ctx: &egui::Context) -> bool {
+        if ctx.viewport_id() != egui::ViewportId::ROOT || !ctx.input(|i| i.viewport().close_requested()) {
+            return false;
+        }
+        // Unsaved changes (or anything else) are holding the window open.
+        if ctx.viewport(|v| v.commands.contains(&egui::ViewportCommand::CancelClose)) {
+            return false;
+        }
+        let Some(quit) = self.platform_quit.as_mut() else { return false };
+        if !quit() {
+            return false;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        true
+    }
 }
 
 /// The single page a content edit changes (`None` for other edits). Like comment edits,
@@ -1360,6 +1379,62 @@ mod revert_draft_tests {
         assert!(app.apply_edit(Edit::SetFieldValue { name: "name".into(), value: FieldValue::Text("Changed".into()) }));
         app.guard_quit(&ctx);
         assert!(app.unsaved_flag.load(Ordering::Relaxed));
+    }
+
+    /// One frame of the root window with its close button pressed, run like `logic`: the unsaved
+    /// check, then the platform quit. Returns whether the close was taken over, how often the
+    /// platform quit ran and whether the window's close was cancelled.
+    fn close_frame(app: &mut PdfCraftApp, platform_quits: Option<bool>) -> (bool, u32, bool) {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let calls = Rc::new(Cell::new(0));
+        app.platform_quit = platform_quits.map(|quits| {
+            let calls = Rc::clone(&calls);
+            Box::new(move || {
+                calls.set(calls.get() + 1);
+                quits
+            }) as crate::PlatformQuitFn
+        });
+        let ctx = egui::Context::default();
+        let mut input = egui::RawInput::default();
+        input.viewports.entry(egui::ViewportId::ROOT).or_default().events.push(egui::ViewportEvent::Close);
+        let mut taken = false;
+        let mut out = ctx.run_logic(&input, |ctx| {
+            app.guard_quit(ctx);
+            taken = app.take_over_close(ctx);
+        });
+        let commands = out.viewport_commands.remove(&egui::ViewportId::ROOT).unwrap_or_default();
+        (taken, calls.get(), commands.contains(&egui::ViewportCommand::CancelClose))
+    }
+
+    #[test]
+    fn closing_the_window_quits_through_the_platform_and_keeps_the_window() {
+        // storytold/pdfcraft#1136: on macOS, eframe dropping the window crashed in AppKit's
+        // Touch Bar finder; `terminate:` closes it instead.
+        let (taken, calls, cancelled) = close_frame(&mut app(), Some(true));
+        assert!(taken);
+        assert_eq!(calls, 1);
+        assert!(cancelled, "the window stays for the platform quit to close");
+    }
+
+    #[test]
+    fn unsaved_changes_ask_before_the_platform_quit() {
+        let mut app = app();
+        assert!(app.apply_edit(Edit::SetFieldValue { name: "name".into(), value: FieldValue::Text("Changed".into()) }));
+        let (taken, calls, cancelled) = close_frame(&mut app, Some(true));
+        assert!(!taken);
+        assert_eq!(calls, 0, "the save question comes first");
+        assert!(cancelled);
+        assert!(app.close_request.is_some(), "the save question is pending");
+    }
+
+    #[test]
+    fn without_a_platform_quit_the_window_closes_as_before() {
+        for platform in [None, Some(false)] {
+            let (taken, _, cancelled) = close_frame(&mut app(), platform);
+            assert!(!taken);
+            assert!(!cancelled, "eframe closes the window");
+        }
     }
 
     #[test]
