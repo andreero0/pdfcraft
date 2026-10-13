@@ -848,6 +848,16 @@ impl PdfCraftApp {
         }
     }
 
+    /// Quit from a native menu (macOS ⌘Q), between frames: asks the main window to close, so the
+    /// unsaved-changes question comes first as it does for the close button. A minimized window
+    /// is brought back, since the question is drawn in it.
+    pub fn quit_from_menu(ctx: &egui::Context) {
+        let root = egui::ViewportId::ROOT;
+        ctx.send_viewport_cmd_to(root, egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd_to(root, egui::ViewportCommand::Focus);
+        ctx.send_viewport_cmd_to(root, egui::ViewportCommand::Close);
+    }
+
     /// After [`Self::guard_quit`]: a close it let through quits through [`Self::platform_quit`]
     /// when there is one, and the window stays for that quit to close. Returns whether it took
     /// the close over.
@@ -1426,6 +1436,18 @@ mod revert_draft_tests {
         assert_eq!(calls, 0, "the save question comes first");
         assert!(cancelled);
         assert!(app.close_request.is_some(), "the save question is pending");
+    }
+
+    #[test]
+    fn the_quit_menu_asks_the_main_window_to_close() {
+        // ⌘Q used to end the process at once and lose unsaved work; now it is a close request,
+        // which `guard_quit` answers like the close button.
+        let ctx = egui::Context::default();
+        PdfCraftApp::quit_from_menu(&ctx);
+        let mut out = ctx.run_logic(&egui::RawInput::default(), |_| {});
+        let commands = out.viewport_commands.remove(&egui::ViewportId::ROOT).unwrap_or_default();
+        assert!(commands.contains(&egui::ViewportCommand::Close), "{commands:?}");
+        assert!(commands.contains(&egui::ViewportCommand::Minimized(false)), "the question is drawn in the window");
     }
 
     #[test]

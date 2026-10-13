@@ -34,6 +34,8 @@ mod apple_events;
 mod compositor_gpu;
 mod logging;
 #[cfg(target_os = "macos")]
+mod macos_menu;
+#[cfg(target_os = "macos")]
 mod macos_quit;
 #[cfg(target_os = "windows")]
 mod motion;
@@ -329,6 +331,9 @@ fn app_creator<'a>(
         {
             app.os_events = Some(apple_events.connect(&cc.egui_ctx));
             app.platform_quit = Some(Box::new(macos_quit::terminate_later));
+            if let Err(e) = macos_menu::install(&cc.egui_ctx) {
+                log::warn!("app menu: {e}; ⌘Q quits without asking about unsaved changes");
+            }
         }
         if let Some(server) = instance {
             app.os_events = Some(server.connect(&cc.egui_ctx));
